@@ -4,7 +4,7 @@ import cv2
 import requests
 import os
 import zipfile
-
+import numpy as np
 
 class TinyImagenet(Dataset):
     def __init__(self, data_path: str, mode="train"):
@@ -28,18 +28,32 @@ class TinyImagenet(Dataset):
             all_classes = sorted(os.listdir(classes_folders))
             self.images_classes = [cl for cl in all_classes for im_name in
                                    os.listdir(os.path.join(classes_folders, cl, "images"))]
+            self.tag_2_class = {tag: cl for cl, tag in
+                                enumerate(sorted(all_classes))}
             self.images_fnames = [os.path.join(classes_folders, cl, "images", im_name) for cl in
                                   all_classes for im_name in
                                   os.listdir(os.path.join(classes_folders, cl, "images"))]
+        elif mode == "val":
+            val_root = os.path.join(data_path, "tiny-imagenet-200", "val")
+            annotations_fname = os.path.join(val_root, "val_annotations.txt")
+            annotations = open(annotations_fname, "r").read().split("\n")
+            self.images_fnames = [item.split("\t")[0] for item in annotations if len(item) > 1]
+            self.images_fnames = [os.path.join(val_root, "images", image) for image in self.images_fnames]
+            self.images_classes = [item.split("\t") for item in annotations]
+            self.images_classes = [item[1] for item in self.images_classes if len(item) > 1]
+            self.tag_2_class = {tag: cl for cl, tag in enumerate(sorted(np.unique(self.images_classes)))}
         else:
-            annotations_fname = os.path.join(data_path, "tiny-imagenet-200", "val", "val_annotations.txt")
-            annotations = open(annotations_fname, "r").read()
-            self.images_fnames = []
+            raise RuntimeError(f"Unknown mode {mode}")
+
     def __getitem__(self, item):
         path = self.images_fnames[item]
         image = cv2.imread(path)
         image = self.transform(image)
-        return image, self.images_classes[item]
+        return image, self.tag_2_class[self.images_classes[item]]
 
     def __len__(self):
         return len(self.images_fnames)
+
+
+if __name__ == "__main__":
+    ds = TinyImagenet("./data", mode="train")
