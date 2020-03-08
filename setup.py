@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="food",
+    name="food-python",
     version="0.1.0",
     url="https://github.com/new-okaerinasai/food",
     author="Ruslan Khaidurov, Sonya Dymchenko, Angelina Yaroshenko, Dmitry Vypirailenko",
@@ -10,4 +10,5 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("./src"),
     long_description=open('README.md').read(),
+    py_modules=["food"]
 )
