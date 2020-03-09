@@ -1,4 +1,6 @@
 # food
+![PyPI](https://img.shields.io/pypi/v/food-python)
+
 A framework for out-of-distribution and anomaly detection.
 
 ## Installation
