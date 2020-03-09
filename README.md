@@ -15,7 +15,10 @@ or
 ```
   python setup.py install [--user]
 ```
-
+or
+```
+  pip install food-python
+```
 ## Usage
 ```
 from food import AngleSoftmax
