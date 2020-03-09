@@ -1,2 +1,4 @@
-from .ood import AngleSoftmax, AngleLinear
-from .datasets import CIFAR100, TinyImagenet
+from .ood import AngleLinear, AngleSoftmax
+from .datasets import CIFAR_100, TinyImagenet
+
+__all__ = []
