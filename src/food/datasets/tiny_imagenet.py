@@ -7,7 +7,9 @@ import zipfile
 import numpy as np
 
 class TinyImagenet(Dataset):
-    def __init__(self, data_path: str, mode="train"):
+    def __init__(self, data_path: str, task="vanilla", mode="train"):
+        if task not in ["vanilla", "ood"]:
+            raise RuntimeError(f"Unknown task {task}")
         self.transform = ToTensor()
         data_path = os.path.abspath(data_path)
         if os.path.exists(data_path):
@@ -17,43 +19,43 @@ class TinyImagenet(Dataset):
             os.makedirs(data_path, exist_ok=True)
             request_res = requests.get("http://cs231n.stanford.edu/tiny-imagenet-200.zip")
             zip_file = os.path.join(data_path, "tiny-imagenet-200.zip")
-            with open(zip_file, 'wb') as f:
+            with open(zip_file, "wb") as f:
                 f.write(request_res.content)
             print("Done")
             print("Extracting")
-            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_file, "r") as zip_ref:
                 zip_ref.extractall(data_path)
         if mode == "train":
-            classes_folders = os.path.join(data_path, "tiny-imagenet-200", mode)
-            all_classes = sorted(os.listdir(classes_folders))
-            self.images_classes = [cl for cl in all_classes for im_name in
-                                   os.listdir(os.path.join(classes_folders, cl, "images"))]
+            tags_folders = os.path.join(data_path, "tiny-imagenet-200", mode)
+            all_tags = sorted(os.listdir(tags_folders))
+            num = 200 if task == "vanilla" else 100
             self.tag_2_class = {tag: cl for cl, tag in
-                                enumerate(sorted(all_classes))}
-            self.images_fnames = [os.path.join(classes_folders, cl, "images", im_name) for cl in
-                                  all_classes for im_name in
-                                  os.listdir(os.path.join(classes_folders, cl, "images"))]
+                                enumerate(sorted(all_tags)[:num])}
+            self.images_tags = [tag for tag in all_tags 
+                                for im_name in os.listdir(os.path.join(tags_folders, tag, "images")) 
+                                if tag in self.tag_2_class]
+            self.images_fnames = [os.path.join(tags_folders, tag, "images", im_name) for tag in all_tags
+                                  for im_name in os.listdir(os.path.join(tags_folders, tag, "images")) 
+                                  if tag in self.tag_2_class]
         elif mode == "val":
             val_root = os.path.join(data_path, "tiny-imagenet-200", "val")
             annotations_fname = os.path.join(val_root, "val_annotations.txt")
-            annotations = open(annotations_fname, "r").read().split("\n")
+            with open(annotations_fname, "r") as annotations_file:
+                annotations = annotations_file.read().split("\n")
             self.images_fnames = [item.split("\t")[0] for item in annotations if len(item) > 1]
             self.images_fnames = [os.path.join(val_root, "images", image) for image in self.images_fnames]
-            self.images_classes = [item.split("\t") for item in annotations]
-            self.images_classes = [item[1] for item in self.images_classes if len(item) > 1]
-            self.tag_2_class = {tag: cl for cl, tag in enumerate(sorted(np.unique(self.images_classes)))}
+            self.images_tags = [item.split("\t") for item in annotations]
+            self.images_tags = [item[1] for item in self.images_tags if len(item) > 1]
+            self.tag_2_class = {tag: (cl if task == "vanilla" else min(cl, 100))
+                                for cl, tag in enumerate(sorted(np.unique(self.images_tags)))}                
         else:
             raise RuntimeError(f"Unknown mode {mode}")
 
-    def __getitem__(self, item):
-        path = self.images_fnames[item]
+    def __getitem__(self, idx):
+        path = self.images_fnames[idx]
         image = cv2.imread(path)
         image = self.transform(image)
-        return image, self.tag_2_class[self.images_classes[item]]
+        return image, self.tag_2_class[self.images_tags[idx]]
 
     def __len__(self):
         return len(self.images_fnames)
-
-
-if __name__ == "__main__":
-    ds = TinyImagenet("./data", mode="train")
