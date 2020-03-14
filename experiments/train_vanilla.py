@@ -117,11 +117,10 @@ def train():
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
-    if torch.cuda.is_available():
-        # optimize training with parallelism
-        #train_dataloader = DataPrefetcher(train_dataloader)
-        #val_dataloader = DataPrefetcher(val_dataloader)
-        pass
+    # if torch.cuda.is_available():
+    #    train_dataloader = DataPrefetcher(train_dataloader)
+    #    val_dataloader = DataPrefetcher(val_dataloader)
+    #    pass
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(lr=args.lr, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
