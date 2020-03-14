@@ -59,22 +59,3 @@ class TinyImagenet(Dataset):
 
     def __len__(self):
         return len(self.images_fnames)
-
-
-if __name__ == "__main__":
-    train = TinyImagenet("./data", task="ood", mode="train")
-    print('ood,tr',len(np.unique(train.images_tags)))
-    print(train.tag_2_class)
-    print("-" * 100)
-    train = TinyImagenet("./data", task="vanilla", mode="train")
-    print('van,tr',len(np.unique(train.images_tags)))
-    print(train.tag_2_class)
-    print("-" * 100)
-    val = TinyImagenet("./data", task="ood", mode="val")
-    print('ood,v',len(np.unique(list(val.tag_2_class.values()))))
-    print(val.tag_2_class)
-    print("-" * 100)
-    val = TinyImagenet("./data", task="vanilla", mode="val")
-    print('van,v',len(np.unique(list(val.tag_2_class.values()))))
-    print(val.tag_2_class)
-    print("-" * 100)
