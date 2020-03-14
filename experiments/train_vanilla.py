@@ -33,10 +33,8 @@ def evaluate(model, dataloader, criterion, device) -> Tuple:
     all_losses = []
     model = model.to(device).eval()
     with torch.no_grad():
-        for images, labels in tqdm.tqdm(dataloader):
-            images = images.to(device)
-            labels = labels.to(device)
-
+        for images, labels in dataloader:
+            images, labels = images.to(device), labels.to(device)
             logits = model.forward(images)
             batch_predictions = logits.argmax(dim=1)
             all_predictions.append((batch_predictions == labels).float())
@@ -119,16 +117,16 @@ def train():
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
-    #if torch.cuda.is_available():
+    if torch.cuda.is_available():
         # optimize training with parallelism
         #train_dataloader = DataPrefetcher(train_dataloader)
         #val_dataloader = DataPrefetcher(val_dataloader)
-
+        pass
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(lr=args.lr, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
 
-    if args.resume:
+    if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
         model.load_state_dict(state_dict["model_state_dict"])
         optimizer.load_state_dict(state_dict["optimizer_state_dict"])
@@ -137,8 +135,9 @@ def train():
     val_writer = SummaryWriter(os.path.join(args.logdir, "val_logs"))
     global_step = 0
     for epoch in range(args.epochs):
-        print("Training")
-        for images, labels in tqdm.tqdm(train_dataloader):
+        print(f"Training, epoch {epoch + 1}")
+        model.train()
+        for images, labels in train_dataloader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             if global_step == 0:

@@ -5,13 +5,16 @@ import requests
 import os
 import zipfile
 import numpy as np
+from albumentations.pytorch import ToTensorV2 as ToTensor
 
 class TinyImagenet(Dataset):
-    def __init__(self, data_path: str, task="vanilla", mode="train"):
+    def __init__(self, data_path: str, task="vanilla", mode="train", transform=ToTensor()):
         if task not in ["vanilla", "ood"]:
             raise RuntimeError(f"Unknown task {task}")
-        self.transform = ToTensor()
+        self.transform = lambda x: transform(force_apply=True, image=x)["image"]
+
         data_path = os.path.abspath(data_path)
+
         if os.path.exists(data_path):
             print("Data path folder already exists. Continuing")
         else:
@@ -25,6 +28,7 @@ class TinyImagenet(Dataset):
             print("Extracting")
             with zipfile.ZipFile(zip_file, "r") as zip_ref:
                 zip_ref.extractall(data_path)
+
         if mode == "train":
             tags_folders = os.path.join(data_path, "tiny-imagenet-200", mode)
             all_tags = sorted(os.listdir(tags_folders))
@@ -50,10 +54,11 @@ class TinyImagenet(Dataset):
                                 for cl, tag in enumerate(sorted(np.unique(self.images_tags)))}                
         else:
             raise RuntimeError(f"Unknown mode {mode}")
+        self.all_images = [cv2.imread(im) for im in self.images_fnames]
 
     def __getitem__(self, idx):
-        path = self.images_fnames[idx]
-        image = cv2.imread(path)
+        #path = self.images_fnames[idx]
+        image = self.all_images[idx] #cv2.imread(path)
         image = self.transform(image)
         return image, self.tag_2_class[self.images_tags[idx]]
 
