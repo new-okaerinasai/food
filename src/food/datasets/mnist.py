@@ -36,7 +36,7 @@ class MNIST(MNIST_torchvision):
                 self.data = self.data[not_ood_idx]
                 self.targets = self.targets[not_ood_idx]
 
-class FashionMNIST2(FashionMNIST):
+class FashionMNIST(FashionMNIST_torchvision):
     '''
     Attributes:
         class_to_id: dict, bijection from name of class to number of class 0 ... 9
