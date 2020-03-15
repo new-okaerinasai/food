@@ -1,5 +1,6 @@
 import numpy as np
-from torchvision.datasets import MNIST, FashionMNIST
+from torchvision.datasets import MNIST as MINST_torchvision
+from torchvision.datasets import FashionMNIST as FashionMNIST_torchvision
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
 
