@@ -3,7 +3,7 @@ from torchvision.datasets import MNIST, FashionMNIST
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
 
-class MNIST2(MNIST):
+class MNIST(MNIST_torchvision):
     '''
     Attributes:
         class_to_id: dict, bijection from name of class to number of class 0 ... 9
