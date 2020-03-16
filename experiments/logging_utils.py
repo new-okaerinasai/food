@@ -42,8 +42,8 @@ def get_ood_recall_with_logits(y_true: torch.Tensor,
 
 
 def get_ood_histograms(y_true, y_pred, ood_label=0):
-    y_pred_ood = F.softmax(y_pred[y_true == ood_label], dim=1).max(dim=1)
-    y_pred_nor = F.softmax(y_pred[y_true != ood_label], dim=1).max(dim=1)
+    y_pred_ood, _ = F.softmax(y_pred[y_true == ood_label], dim=1).max(dim=1)
+    y_pred_nor, _ = F.softmax(y_pred[y_true != ood_label], dim=1).max(dim=1)
     return y_pred_ood, y_pred_nor
 
 
@@ -75,6 +75,7 @@ def log_dict_with_writer(y_true: torch.Tensor, y_pred: torch.Tensor,
     """
     metrics_dict = get_metrics_dict(y_true, y_pred, thr, ood_label)
     for names, hist in metrics_dict["hist"].items():
+#        raise Exception(hist)
         summary_writer.add_histogram(names, hist)
 
     for names, scalars in metrics_dict["scalar"].items():
