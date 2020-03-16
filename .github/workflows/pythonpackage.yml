@@ -1,11 +1,12 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions For more information see: 
 # https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 name: Python package 
- on:
+on:
   push:
-    branches: [ ruslan ]
+    branches: [ testing_workflow ]
   pull_request:
-    branches: [ ruslan ] jobs:
+    branches: [ testing_workflow ] 
+jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
