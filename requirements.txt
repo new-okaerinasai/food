@@ -6,4 +6,5 @@ scikit-learn
 matplotlib
 opencv-python
 albumentations
+requests
 
