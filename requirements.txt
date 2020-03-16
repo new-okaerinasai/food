@@ -1,0 +1,9 @@
+torch>=1.3.0
+torchvision
+numpy
+scipy
+scikit-learn
+matplotlib
+opencv-python
+albumentations
+
