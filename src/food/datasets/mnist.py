@@ -19,7 +19,8 @@ class MNIST(MNIST_torchvision):
             raise RuntimeError(f"Unknown mode {mode}")
         super().__init__(datapath, train=(mode == "train"), download=True)
 
-        self.transform = lambda x: transform(force_apply=True, image=x)["image"]
+        self.transform = lambda x: transform(force_apply=True,
+                                             image=np.array(x)[..., None])["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
 
@@ -51,7 +52,8 @@ class FashionMNIST(FashionMNIST_torchvision):
             raise RuntimeError(f"Unknown mode {mode}")
         super().__init__(datapath, train=(mode == "train"), download=True)
 
-        self.transform = lambda x: transform(force_apply=True, image=x)["image"]
+        self.transform = lambda x: transform(force_apply=True,
+                                             image=np.array(x)[..., None])["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
 
