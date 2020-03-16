@@ -3,9 +3,9 @@
 name: Python package 
 on:
   push:
-    branches: [ testing_workflow ]
+    branches: [ master ]
   pull_request:
-    branches: [ testing_workflow ] 
+    branches: [ master ] 
 jobs:
   build:
     runs-on: ubuntu-latest
