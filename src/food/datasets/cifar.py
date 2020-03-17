@@ -11,12 +11,13 @@ class CIFAR_10(CIFAR10):
     '''
     def __init__(self, datapath: str, task="vanilla", mode="train", transform=ToTensor()):
         if task not in ["vanilla", "ood"]:
-            raise RuntimeError(f"Unknown task {task}")  
+            raise RuntimeError(f"Unknown task {task}")
         super().__init__(datapath, train=(mode == "train"), download=True)
-        self.transform = lambda x: transform(force_apply=True, image=x)["image"]
+        self.transform = lambda x: transform(force_apply=True,
+                                             image=np.array(x))["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-        
+
         if task == "ood":
             self.targets = np.array(self.targets)
             not_ood = (self.targets < 5)
@@ -40,10 +41,11 @@ class CIFAR_100(CIFAR100):
         if task not in ["vanilla", "ood"]:
             raise RuntimeError(f"Unknown task {task}")
         super().__init__(datapath, train=(mode == "train"), download=True)
-        self.transform = lambda x: transform(force_apply=True, image=x)["image"]
+        self.transform = lambda x: transform(force_apply=True,
+                                             image=np.array(x))["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-        
+
         if task == "ood":
             self.targets = np.array(self.targets)
             not_ood = (self.targets < 50)
