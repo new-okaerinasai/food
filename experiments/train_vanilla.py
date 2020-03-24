@@ -54,7 +54,9 @@ def evaluate(model, dataloader, criterion, device, train_writer) -> Tuple:
     return loss, accuracy
 
 
-def train():
+def train(**kwargs):
+    
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", default="./data", type=str,
                         help="path where data is kept or will be downloaded")
@@ -95,9 +97,24 @@ def train():
             shutil.rmtree(args.logdir)
         except FileNotFoundError:
             pass
+    
+    batch_size=args.batch_size
+    batch_size = kwargs.get('batch_size', batch_size)
+    
+    model=args.model.lower()
+    model = kwargs.get('model', model).lower()
+    
+    dataset = args.dataset.lower()
+    dataset = kwargs.get('dataset', dataset).lower()
+    
+    epochs = args.epochs
+    epochs = kwargs.get('epochs', epochs)
+    
+    test_b = kwargs.get('test', False)
 
+    
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    if args.model.lower() == "resnet18":
+    if model.lower() == "resnet18":
         train_transforms = Compose([
             RandomBrightnessContrast(p=0.5),
             Rotate(20),
@@ -109,43 +126,48 @@ def train():
             Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
             ToTensor(),
         ], p=1)
-        model = resnet18(num_classes=n_classes[args.dataset.lower()])
-    elif args.model.lower() == "resnet50":
+        model = resnet18(num_classes=n_classes[dataset.lower()])
+    elif model.lower() == "resnet50":
         train_transforms = Compose([
             ToTensor()
         ])
         val_transforms = Compose([
             ToTensor()
         ])
-        model = resnet50(num_classes=n_classes[args.dataset])
+        model = resnet50(num_classes=n_classes[dataset])
     else:
-        raise NotImplementedError("Unknown model".format(args.model))
+        raise NotImplementedError("Unknown model".format(model))
     model.to(device)
 
-    ds_class = get_with_arg[args.dataset.lower()]
-    if args.dataset.lower() == 'tiny_imagenet':
+    ds_class = get_with_arg[dataset.lower()]
+    if dataset.lower() == 'tiny_imagenet':
         train_dataset = food.datasets.TinyImagenet(args.data_path, mode="train", task=args.task.lower(),
                                                    transform=train_transforms)
         val_dataset = food.datasets.TinyImagenet(args.data_path, mode="val", task=args.task.lower(),
                                                  transform=val_transforms)
         ood_label = 100
-    elif args.dataset.lower() == "cifar_100":
+    elif dataset.lower() == "cifar_100":
         train_dataset = food.datasets.CIFAR_100(args.data_path, mode="train", transform=train_transforms,
                                                 task=args.task.lower())
         val_dataset = food.datasets.CIFAR_100(args.data_path, mode="val", transform=val_transforms,
                                               task=args.task.lower())
         ood_label = 50
-    elif args.dataset.lower() == "cifar_10":
+    elif dataset.lower() == "cifar_10":
         train_dataset = food.datasets.CIFAR_10(args.data_path, mode="train", task=args.task.lower(),
                                                transform=train_transforms)
         val_dataset = food.datasets.CIFAR_10(args.data_path, mode="val", task=args.task.lower(),
                                              transform=val_transforms)
         ood_label = 5
     else:
-        raise NotImplementedError("Unknown dataset {}".format(args.dataset))
-
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
+        raise NotImplementedError("Unknown dataset {}".format(dataset))
+    
+    
+    #batch_size=args.batch_size
+    #batch_size = kwargs.get('batch_size', batch_size)
+    
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
     # if torch.cuda.is_available(): TODO
     #    train_dataloader = DataPrefetcher(train_dataloader)
     #    val_dataloader = DataPrefetcher(val_dataloader)
@@ -161,7 +183,7 @@ def train():
 
     train_writer = SummaryWriter(os.path.join(args.logdir, "train_logs"))
     global_step = 0
-    for epoch in range(args.epochs):
+    for epoch in range(epochs):
         print(f"Training, epoch {epoch + 1}")
         model.train()
         val_writer = SummaryWriter(os.path.join(args.logdir, f"val_logs_{epoch}"))
@@ -190,7 +212,9 @@ def train():
             torch.save({"model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict()}, f)
         scheduler.step()
-
+    
+    if test_b:
+        return logits, loss, predictions, val_loss, val_acc
 
 if __name__ == '__main__':
     train()
