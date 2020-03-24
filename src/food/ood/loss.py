@@ -29,7 +29,7 @@ class glass_simple_loss(torch.nn.Module):
         c = 0.1
         for i in range(target.shape[0]):
             l = max(predicted - predicted[target[i]] + c,0)
-            L+= l.sum()-c,  # added pred[ind]-pred[ind]+c    
+        L+= l.sum()-c,  # added pred[ind]-pred[ind]+c    
         return L
         
 class glass_loss(torch.nn.Module):
