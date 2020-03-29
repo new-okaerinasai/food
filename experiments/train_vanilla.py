@@ -1,6 +1,7 @@
 import food
 from food.datasets import TinyImagenet, CIFAR_100
 from food.datasets.utils import DataPrefetcher
+from utils import Config
 
 from logging_utils import log_dict_with_writer
 
@@ -43,8 +44,6 @@ def evaluate(model, dataloader, criterion, device, train_writer) -> Tuple:
             all_logits.append(logits)
             all_labels.append(labels)
             all_predictions.append((batch_predictions == labels).float())
-            #print(logits.shape, labels.shape)
-            #all_losses.append(criterion(logits, labels).item())
         accuracy = torch.cat(all_predictions).mean()
         loss = 0#np.mean(all_losses)
         logits = torch.cat(all_logits)
@@ -55,64 +54,39 @@ def evaluate(model, dataloader, criterion, device, train_writer) -> Tuple:
 
 
 def train(**kwargs):
-    
-    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", default="./data", type=str,
-                        help="path where data is kept or will be downloaded")
-    parser.add_argument("--batch_size", default=512, type=int,
-                        help="um... batch size during training and testing, I guess?")
-    parser.add_argument('--model', default="resnet18", type=str,
-                        help="model to train. Must be resnet18 or resnet50")
-    parser.add_argument('--dataset', default="tiny_imagenet", type=str,
-                        help="dataset on which we train. Must be \'tiny_imagenet\' or 'cifar_100")
-    parser.add_argument("--lr", default=1e-3, type=float,
-                        help="learning rate. Must be float")
-    parser.add_argument('--epochs', default=10, type=int,
-                        help="number of training epochs")
-    parser.add_argument('--logdir', default="./logs",
-                        help="directory where logs for tensorboard will be stored. Training plots can be\
-                         viewed with ```tensroboard --logdir=logdir```")
-    parser.add_argument('--checkpoints_dir', default="./checkpoints",
-                        help="directory where checkpoints will be stored")
-    parser.add_argument('--checkpoint_each', default=20, type=int,
-                        help="number of steps -- checkpointing interval")
-    parser.add_argument('--log_each', default=10, type=int,
-                        help="number of steps -- logging interval for tensorboard")
-    parser.add_argument('--keep_logs', action="store_true",
-                        help="set this to keep old logs in logdir if it exists")
-    parser.add_argument('--resume', type=str, default=None,
-                        help="path to a previous checkpointt to continue training")
-    parser.add_argument('--task', type=str, default='ood', choices=['vanilla', 'ood'],
-                        help="task that we solve. Choose 'ood' to train the ood detector.")
+    parser.add_argument("--config", default="./vanilla.json", type=str,
+                        help="path to the config file")
     args = parser.parse_args()
+    args = Config(args.config)
     if args.task.lower() == 'ood':
         n_classes = {"tiny_imagenet": 100, "cifar_100": 50}
     else:
         n_classes = {"tiny_imagenet": 200, "cifar_100": 100}
-    get_with_arg = {"tiny_imagenet": food.datasets.TinyImagenet, "cifar_100": food.datasets.CIFAR_100,
+    get_with_arg = {"tiny_imagenet": food.datasets.TinyImagenet,
+                    "cifar_100": food.datasets.CIFAR_100,
                     "cifar_10": food.datasets.CIFAR_10}
     if not args.keep_logs:
         try:
             shutil.rmtree(args.logdir)
         except FileNotFoundError:
             pass
-    
+
     batch_size=args.batch_size
     batch_size = kwargs.get('batch_size', batch_size)
-    
+
     model=args.model.lower()
     model = kwargs.get('model', model).lower()
-    
+
     dataset = args.dataset.lower()
     dataset = kwargs.get('dataset', dataset).lower()
-    
+
     epochs = args.epochs
     epochs = kwargs.get('epochs', epochs)
-    
+
     test_b = kwargs.get('test', False)
 
-    
+
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     if model.lower() == "resnet18":
         train_transforms = Compose([
@@ -160,12 +134,12 @@ def train(**kwargs):
         ood_label = 5
     else:
         raise NotImplementedError("Unknown dataset {}".format(dataset))
-    
-    
+
+
     #batch_size=args.batch_size
     #batch_size = kwargs.get('batch_size', batch_size)
-    
-    
+
+
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
     # if torch.cuda.is_available(): TODO
@@ -212,7 +186,7 @@ def train(**kwargs):
             torch.save({"model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict()}, f)
         scheduler.step()
-    
+
     if test_b:
         return logits, loss, predictions, val_loss, val_acc
 
