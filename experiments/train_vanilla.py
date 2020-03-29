@@ -86,34 +86,21 @@ def train(**kwargs):
 
     test_b = kwargs.get('test', False)
 
+    ds_class = get_with_arg[dataset.lower()]
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    if model.lower() == "resnet18":
-        train_transforms = Compose([
+    train_transforms = Compose([
             RandomBrightnessContrast(p=0.5),
             Rotate(20),
             HorizontalFlip(0.5),
             Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
-            ToTensor(),
-        ], p=1)
-        val_transforms = Compose([
-            Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
-            ToTensor(),
-        ], p=1)
-        model = resnet18(num_classes=n_classes[dataset.lower()])
-    elif model.lower() == "resnet50":
-        train_transforms = Compose([
-            ToTensor()
-        ])
-        val_transforms = Compose([
-            ToTensor()
-        ])
-        model = resnet50(num_classes=n_classes[dataset])
-    else:
-        raise NotImplementedError("Unknown model".format(model))
-    model.to(device)
+           ToTensor(),
+    ], p=1)
+    val_transforms = Compose([
+        Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+        ToTensor(),
+    ], p=1)
 
-    ds_class = get_with_arg[dataset.lower()]
+
     if dataset.lower() == 'tiny_imagenet':
         train_dataset = food.datasets.TinyImagenet(args.data_path, mode="train", task=args.task.lower(),
                                                    transform=train_transforms)
@@ -134,7 +121,7 @@ def train(**kwargs):
         ood_label = 5
     else:
         raise NotImplementedError("Unknown dataset {}".format(dataset))
-
+    model = resnet18(num_classes=train_dataset.n_classes)
 
     #batch_size=args.batch_size
     #batch_size = kwargs.get('batch_size', batch_size)
@@ -146,6 +133,10 @@ def train(**kwargs):
     #    train_dataloader = DataPrefetcher(train_dataloader)
     #    val_dataloader = DataPrefetcher(val_dataloader)
     #    pass
+
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(lr=args.lr, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
