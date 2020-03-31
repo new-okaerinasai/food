@@ -168,6 +168,5 @@ def train(**kwargs):
     if test_b:
         return logits, loss, predictions, val_loss, val_acc
 
-
 if __name__ == '__main__':
     train()
