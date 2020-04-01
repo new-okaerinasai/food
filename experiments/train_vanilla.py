@@ -1,6 +1,6 @@
 import food
 from food.datasets import TinyImagenet, CIFAR_100
-from food.datasets.utils import DataPrefetcher
+# from food.datasets.utils import DataPrefetcher
 from utils import Config
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
@@ -15,6 +15,7 @@ from albumentations import (Rotate, Compose, RandomBrightnessContrast,
                             Normalize, HorizontalFlip, VerticalFlip,
                             RandomResizedCrop, ShiftScaleRotate)
 from albumentations.pytorch import ToTensorV2 as ToTensor
+from PIL import Image
 
 import numpy as np
 import tqdm
@@ -78,22 +79,14 @@ def train(**kwargs):
             shutil.rmtree(args.logdir)
         except FileNotFoundError:
             pass
-
-    batch_size=args.batch_size
-    batch_size = kwargs.get('batch_size', batch_size)
-
-    model=args.model.lower()
-    model = kwargs.get('model', model).lower()
-
-    dataset = args.dataset.lower()
-    dataset = kwargs.get('dataset', dataset).lower()
-
-    epochs = args.epochs
-    epochs = kwargs.get('epochs', epochs)
-
+    
+    batch_size = kwargs.get('batch_size', args.batch_size)
+    model = kwargs.get('model', args.model).lower()
+    dataset = kwargs.get('dataset', args.dataset).lower()
+    epochs = kwargs.get('epochs', args.epochs)
     test_b = kwargs.get('test', False)
 
-    ds_class = get_dataset_with_arg[dataset.lower()]
+    ds_class = get_dataset_with_arg[dataset]
 
     train_transforms = Compose([
             HorizontalFlip(p=0.5),
@@ -116,9 +109,6 @@ def train(**kwargs):
     print(model.__class__.__name__)
     print("Total number of model's parameters: ",
           np.sum([p.numel() for p in model.parameters() if p.requires_grad]))
-    #batch_size=args.batch_size
-    #batch_size = kwargs.get('batch_size', batch_size)
-
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
@@ -139,6 +129,7 @@ def train(**kwargs):
         model.load_state_dict(state_dict["model_state_dict"])
         optimizer.load_state_dict(state_dict["optimizer_state_dict"])
 
+    os.makedirs(args.checkpoints_dir, exist_ok=True)
     train_writer = SummaryWriter(os.path.join(args.logdir, "train_logs"))
     val_writer = SummaryWriter(os.path.join(args.logdir, "val_logs"))
     global_step = 0
@@ -156,20 +147,20 @@ def train(**kwargs):
             accuracy_t = torch.mean((predictions == labels).float()).item()
             if global_step % args.log_each == 0:
                 # TODO
-                # train_writer.add_scalar("Loss_BCE", loss, global_step=global_step)
-                # train_writer.add_scalar("Accuracy", accuracy_t, global_step=global_step)
-                # train_writer.add_scalar("Learning_rate", scheduler.get_lr()[-1], global_step=global_step)
-                #log_dict_with_writer(labels, logits, train_writer, global_step=global_step)
-                pass
+                train_writer.add_scalar("Loss_BCE", loss, global_step=global_step)
+                train_writer.add_scalar("Accuracy", accuracy_t, global_step=global_step)
+                train_writer.add_scalar("Learning_rate", scheduler.get_lr()[-1], global_step=global_step)
+                # log_dict_with_writer(labels, logits, train_writer, global_step=global_step)
             loss.backward()
             optimizer.step()
             global_step += 1
         print("Validating...")
         val_loss, val_acc = evaluate(model, val_dataloader, criterion, device, val_writer)
+        val_writer.add_image("hist", torchvision.transforms.ToTensor()(Image.open("hist.pdf").convert("RGB")), global_step=global_step)
         val_writer.add_scalar("Loss_BCE", val_loss, global_step=global_step)
         val_writer.add_scalar("Accuracy", val_acc, global_step=global_step)
 
-        if epoch % args.checkpoint_each == 0:
+        if (epoch + 1) % args.checkpoint_each == 0:  # prevent not saving 999 epoch 
             print("Saving checkpoint...")
             with open(os.path.join(args.checkpoints_dir, f"epoch_{epoch}_{global_step}.pt"), "wb") as f:
                 torch.save({"model_state_dict": model.state_dict(),
