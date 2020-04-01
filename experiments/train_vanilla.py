@@ -63,7 +63,6 @@ def evaluate(model, dataloader, criterion, device, writer) -> Tuple:
         print("  Evaluation results: \n  Accuracy: {:.4f}\n  Loss: {:.4f}".format(accuracy, loss))
     return loss, accuracy
 
-
 def train(**kwargs):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="./vanilla.json", type=str,
