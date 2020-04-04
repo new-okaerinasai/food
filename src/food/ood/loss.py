@@ -20,10 +20,8 @@ class GlassReg(torch.nn.Module):
         Z = torch.diag(diag)
 
         reg = torch.matmul(V.weight, V.weight.T) - \
-            (torch.matmul(A, Z)+torch.matmul(Z, A))/2
-        L = (torch.norm(reg, p='fro') / n_classes)**2
- #       print(L)
-
+            (torch.matmul(A, Z) + torch.matmul(Z, A)) / 2
+        L = (torch.norm(reg, p='fro') / n_classes) ** 2
         return L
 
 
@@ -42,27 +40,27 @@ class GlassSimpleLoss(torch.nn.Module):
             print(l)
             l[target[i]] = 0
             L += l.sum()  # added pred[ind]-pred[ind]+c
-        return L/prediction.shape[0]
+        return L / prediction.shape[0]
 
 
 class GlassLoss(torch.nn.Module):
-    def __init__(self, alpha: float = 10., loss_type='CrossEntropy'):
+    def __init__(self, alpha: float = 10., loss_type='crossentropy'):
         super(GlassLoss, self).__init__()
         self._alpha = alpha
         self._reg = GlassReg()
         self._loss = torch.nn.CrossEntropyLoss()
         self._type = loss_type
-        if loss_type == 'Simple':
+        if loss_type == 'simple':
             self._loss = GlassSimpleLoss()
 
     def forward(self, model: torch.nn.Module, V: torch.Tensor, target: torch.Tensor,
                 prediction: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
         mask = target < V.weight.shape[0]
         self._loss = self._loss.to(target.device)
-        if self._type == 'Simple':
+        if self._type == 'simple':
             loss = self._loss(target[mask], logits[mask, :])
         else:
-            loss = self._loss(logits, target)  # [mask,:],target[mask])
+            loss = self._loss(logits, target)
         reg = self._reg(model, V, target[mask])
 
         return loss + self._alpha * reg
