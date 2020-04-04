@@ -5,13 +5,20 @@ from utils import Config
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
 
+import os
+import shutil
+import argparse
+from typing import Tuple
+
 import torch
+import torch.nn.functional as F
+import torchvision
+
 from torch import nn
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.models import resnet18, resnet50, mobilenet_v2
-import torchvision
+
 from albumentations import (Rotate, Compose, RandomBrightnessContrast,
                             Normalize, HorizontalFlip, VerticalFlip,
                             RandomResizedCrop, ShiftScaleRotate)
@@ -19,11 +26,6 @@ from albumentations.pytorch import ToTensorV2 as ToTensor
 
 import numpy as np
 import tqdm
-
-import shutil
-import argparse
-import os
-from typing import Tuple
 
 
 class Net2LastLayers(torch.nn.Module):
@@ -35,7 +37,6 @@ class Net2LastLayers(torch.nn.Module):
     def forward(self, x):
         results = []
         x_new = x
-#        print(self.features)
         mod = nn.Sequential(*self.features[:-1])
         x_prelast = mod(x_new).squeeze()
         x_last = self.features[-1](x_prelast)
@@ -75,7 +76,6 @@ def evaluate(model, dataloader, criterion, device, writer) -> Tuple:
             valid_predictions = valid_logits.argmax(1)
             valid_prev_logits = prev_logits[valid_logits_mask]
             all_predictions.append((valid_predictions == valid_labels).float())
-#            print(V, valid_labels.shape, valid_logits.shape,valid_prev_logits.shape)
             all_losses.append(criterion(model, V, valid_labels,
                                         valid_prev_logits, valid_logits).item())
         accuracy = torch.cat(all_predictions).mean()
@@ -103,23 +103,13 @@ def train(**kwargs):
         except FileNotFoundError:
             pass
 
-    batch_size = args.batch_size
-    batch_size = kwargs.get('batch_size', batch_size)
-
-    model = args.model.lower()
-    model = kwargs.get('model', model).lower()
-
-    dataset = args.dataset.lower()
-    dataset = kwargs.get('dataset', dataset).lower()
-
-    epochs = args.epochs
-    epochs = kwargs.get('epochs', epochs)
-
-    alpha = args.alpha
-    alpha = kwargs.get('alpha', alpha)
-
-    loss_type = args.loss_type
-    loss_type = kwargs.get('loss_type', loss_type)
+    batch_size = kwargs.get('batch_size', args.batch_size)
+    model = kwargs.get('model', args.model).lower()
+    dataset = kwargs.get('dataset', args.dataset).lower()
+    epochs = kwargs.get('epochs', args.epochs)
+    
+    alpha = kwargs.get('alpha', args.alpha)
+    loss_type = kwargs.get('loss_type', args.loss_type).lower()
 
     test_b = kwargs.get('test', False)
 
@@ -140,15 +130,11 @@ def train(**kwargs):
                              transform=train_transforms)
     val_dataset = ds_class(args.data_path, mode="val", task=args.task.lower(),
                                                 transform=val_transforms)
-#    print(train_dataset.n_classes)
     model = getattr(torchvision.models, args.model)(
         num_classes=train_dataset.n_classes)
     model = Net2LastLayers(model)
-#    print(model.__class__.__name__)
     print("Total number of model's parameters: ",
           np.sum([p.numel() for p in model.parameters() if p.requires_grad]))
-    # batch_size=args.batch_size
-    #batch_size = kwargs.get('batch_size', batch_size)
 
     train_dataloader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
@@ -181,8 +167,6 @@ def train(**kwargs):
         for images, labels in train_dataloader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-#            if global_step == 0:
-#                train_writer.add_graph(model, images)
             prev_logits, logits, V = model.forward(images)
             prev_logits, logits, V = prev_logits.to(
                 device), logits.to(device), V.to(device)
