@@ -131,7 +131,7 @@ def train(**kwargs):
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(lr=args.lr, params=model.parameters())
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [50, 100, 200], gamma=0.1) #ExponentialLR(optimizer, 0.9)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor = 0.2, threshold = 0.002, patience=10, threshold_mode='abs')
 
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
@@ -173,7 +173,7 @@ def train(**kwargs):
             with open(os.path.join(args.checkpoints_dir, f"epoch_{epoch}_{global_step}.pt"), "wb") as f:
                 torch.save({"model_state_dict": model.state_dict(),
                             "optimizer_state_dict": optimizer.state_dict()}, f)
-        scheduler.step()
+        scheduler.step(val_acc)
 
     if test_b:
         return logits, loss, predictions, val_loss, val_acc
