@@ -163,7 +163,7 @@ def train(**kwargs):
             with open(os.path.join(args.checkpoints_dir, f"epoch_{epoch}_{global_step}.pt"), "wb") as f:
                 torch.save({"model_state_dict": model.state_dict(),
                             "optimizer_state_dict": optimizer.state_dict()}, f)
-        scheduler.step()
+        scheduler.step(val_acc)
 
     if test_b:
         return logits, loss, predictions, val_loss, val_acc
