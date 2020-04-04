@@ -12,6 +12,6 @@
     "task": "ood",
     "dataset": "cifar_100",
     "log_each": 20,
-    "temperature": null,
-    "eps": null
+    "eps": 0.01,
+    "temperature": 10
 }
