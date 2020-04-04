@@ -1,15 +1,19 @@
 import food
 from food.datasets import TinyImagenet, CIFAR_100
 from food.datasets.utils import DataPrefetcher
+from utils import Config
 
-from logging_utils import log_dict_with_writer
+from logging_utils import log_dict_with_writer, log_hist_as_picture
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision.models import resnet18, resnet50
-from albumentations import Rotate, Compose, RandomBrightnessContrast, Normalize, HorizontalFlip
+from torchvision.models import resnet18, resnet50, mobilenet_v2
+import torchvision
+from albumentations import (Rotate, Compose, RandomBrightnessContrast,
+                            Normalize, HorizontalFlip, VerticalFlip,
+                            RandomResizedCrop, ShiftScaleRotate)
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
 import numpy as np
@@ -21,7 +25,7 @@ import os
 from typing import Tuple
 
 
-def evaluate(model, dataloader, criterion, device, train_writer) -> Tuple:
+def evaluate(model, dataloader, criterion, device, writer) -> Tuple:
     """
     Evaluate model. This function prints validation loss and accuracy.
     :param model: model to evaluate
@@ -32,25 +36,31 @@ def evaluate(model, dataloader, criterion, device, train_writer) -> Tuple:
     all_predictions = []
     all_losses = []
     model = model.to(device).eval()
-    ood_label = 100
     all_logits = []
-    all_labels = []
+    all_labels =[]
     with torch.no_grad():
         for images, labels in dataloader:
             images, labels = images.to(device), labels.to(device)
             logits = model.forward(images)
-            batch_predictions = logits.argmax(dim=1)
             all_logits.append(logits)
             all_labels.append(labels)
-            all_predictions.append((batch_predictions == labels).float())
-            #print(logits.shape, labels.shape)
-            #all_losses.append(criterion(logits, labels).item())
+            batch_predictions = logits.argmax(dim=1)
+
+            # just not to write additional code for ood and vanilla task
+            # valid mask corresponds only for known labels
+            valid_logits_mask = (labels < logits.shape[1])
+            valid_logits = logits[valid_logits_mask]
+            valid_labels = labels[valid_logits_mask]
+            valid_predictions = valid_logits.argmax(1)
+            all_predictions.append((valid_predictions == valid_labels).float())
+            all_losses.append(criterion(valid_logits, valid_labels).item())
         accuracy = torch.cat(all_predictions).mean()
-        loss = 0#np.mean(all_losses)
-        logits = torch.cat(all_logits)
-        labels = torch.cat(all_labels)
-        log_dict_with_writer(labels, logits, train_writer, ood_label=ood_label)
-        print("  Evaluation results: \n   Accuracy: {:.4f}\n   Loss: {:.4f}".format(accuracy, loss))
+        all_logits = torch.cat(all_logits)
+        all_labels = torch.cat(all_labels)
+        print(all_labels.shape, all_logits.shape)
+        log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
+        loss = np.mean(all_losses)
+        print("  Evaluation results: \n  Accuracy: {:.4f}\n  Loss: {:.4f}".format(accuracy, loss))
     return loss, accuracy
 
 def train(**kwargs):

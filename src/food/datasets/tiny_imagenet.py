@@ -41,10 +41,11 @@ class TinyImagenet(Dataset):
 
         self._images_classes = []
         self._images_fnames = []
-
+        num = 200 if task == "vanilla" else 100
+        self.n_classes = num
         if mode == "train":
             tags_folders = os.path.join(datapath, "tiny-imagenet-200", mode)
-            num = 200 if task == "vanilla" else 100
+
             all_tags = sorted(os.listdir(tags_folders))[:num]
             self.tag_to_class = {tag: cl for cl, tag in enumerate(all_tags)}
 
@@ -75,7 +76,7 @@ class TinyImagenet(Dataset):
 
         self.class_to_id = {cl: (idx if task == "vanilla" else min(idx, 100))
                                 for idx, cl in enumerate(range(len(self.tag_to_class)))}
-        self.data = [cv2.imread(im) for im in tqdm(self._images_fnames)]
+        self.data = [cv2.imread(im)[..., ::-1] for im in tqdm(self._images_fnames)]
         self.targets = [self.class_to_id[self.tag_to_class[cl]] for cl in self._images_classes]
 
     def __getitem__(self, item):

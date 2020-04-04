@@ -23,10 +23,11 @@ class MNIST(MNIST_torchvision):
                                              image=np.array(x)[..., None])["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-
+        self.n_classes = 10
         if task == "ood":
             not_ood_digits = [2, 3, 5, 6, 8]
             ood_digits = [0, 1, 4, 7, 9]
+            n_classes = len(ood_digits)
             self.class_to_id = {d : min(i, 5) for i, d in enumerate(not_ood_digits + ood_digits)}
             self.target_transform = lambda x: self.class_to_id[x]
 
@@ -56,8 +57,9 @@ class FashionMNIST(FashionMNIST_torchvision):
                                              image=np.array(x)[..., None])["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-
+        self.n_classes = 10
         if task == "ood":
+            self.n_classes = 5
             not_ood_digits = [0, 2, 3, 4, 6]
             ood_digits = [1, 5, 7, 8, 9]
             self.class_to_id = {d : min(i, 5) for i, d in enumerate(not_ood_digits + ood_digits)}
