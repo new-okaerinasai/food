@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import food
 from food.datasets import TinyImagenet, MNIST, FashionMNIST, CIFAR_10, CIFAR_100
 from experiments.train_vanilla import evaluate, train
