@@ -1,0 +1,15 @@
+{
+    "data_path": "./data",
+    "batch_size": 32,
+    "model": "resnet18",
+    "lr": 1e-3,
+    "epochs": 500,
+    "logdir": "./logs",
+    "checkpoints_dir": "./checkpoints1",
+    "checkpoint_each": 20,
+    "keep_logs": false,
+    "resume": null,
+    "task": "ood",
+    "dataset": "cifar_10",
+    "log_each": 20
+}
