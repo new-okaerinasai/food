@@ -75,7 +75,7 @@ def log_hist_as_picture(y_true: torch.Tensor, y_pred: torch.Tensor,
         plt.hist(hist.cpu().detach().numpy(), bins=20, range=(0,1),
                  label=names, alpha=0.4, color=c[i % 2], density=True)
     plt.legend()
-    plt.savefig("hist.pdf")
+    plt.savefig("hist.png")
     plt.close()
 
 def log_dict_with_writer(y_true: torch.Tensor, y_pred: torch.Tensor,
