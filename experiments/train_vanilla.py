@@ -24,7 +24,7 @@ import os
 from typing import Tuple
 
 
-def evaluate(model, dataloader, criterion, device, writer, T=10, eps=0.01) -> Tuple:
+def evaluate(model, dataloader, criterion, device, writer, T=None, eps=None) -> Tuple:
     """
     Evaluate model. This function prints validation loss and accuracy.
     :param model: model to evaluate

@@ -5,7 +5,7 @@
     "lr": 1e-3,
     "epochs": 500,
     "logdir": "./logs",
-    "checkpoints_dir": "./checkpoints1",
+    "checkpoints_dir": "./checkpoints",
     "checkpoint_each": 20,
     "keep_logs": false,
     "resume": null,
