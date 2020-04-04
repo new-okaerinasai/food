@@ -2,7 +2,9 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import precision_score, recall_score
 from torch.utils.tensorboard import SummaryWriter
-
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
 
 def get_accuracy_with_logits(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
     """
@@ -55,10 +57,25 @@ def get_metrics_dict(y_true, y_pred, thr=None, ood_label=0):
         metrics_dict["scalar"]["ood_recall"] = get_ood_recall_with_logits(y_true, y_pred, thr, ood_label)
         metrics_dict["scalar"]["ood_precision"] = get_ood_precision_with_logits(y_true, y_pred, thr, ood_label)
     metrics_dict["hist"] = {}
-    metrics_dict["hist"]["ood_max_true"], metrics_dict["hist"]["ood_max_pred"] = get_ood_histograms(y_true, y_pred,
+    metrics_dict["hist"]["ood_max_ood"], metrics_dict["hist"]["ood_max_known"] = get_ood_histograms(y_true, y_pred,
                                                                                                     ood_label)
     return metrics_dict
 
+def log_hist_as_picture(y_true: torch.Tensor, y_pred: torch.Tensor,
+                        ood_label=0, thr=None, global_step=None):
+    print("OOD_LABEL = ", ood_label)
+    print("y_true max", y_true.max(), y_true.shape)
+    metrics_dict = get_metrics_dict(y_true, y_pred, thr, ood_label)
+    #plt.figure(figsize=(10, 8))
+    c = ["red", "blue"]
+    plt.figure(figsize=(10, 8))
+    plt.title("Known classes vs OOD max logit distribution")
+    for i, (names, hist) in enumerate(metrics_dict["hist"].items()):
+        plt.hist(hist.cpu().detach().numpy(), bins=20, range=(0,1),
+                 label=names, alpha=0.4, color=c[i % 2], density=True)
+    plt.legend()
+    plt.savefig("hist.png")
+    plt.close()
 
 def log_dict_with_writer(y_true: torch.Tensor, y_pred: torch.Tensor,
                          summary_writer: torch.utils.tensorboard.SummaryWriter,
@@ -75,8 +92,7 @@ def log_dict_with_writer(y_true: torch.Tensor, y_pred: torch.Tensor,
     """
     metrics_dict = get_metrics_dict(y_true, y_pred, thr, ood_label)
     for names, hist in metrics_dict["hist"].items():
-#        raise Exception(hist)
-        summary_writer.add_histogram(names, hist)
+        summary_writer.add_histogram(names+str(global_step), hist)
 
     for names, scalars in metrics_dict["scalar"].items():
         summary_writer.add_histogram(names, scalars)

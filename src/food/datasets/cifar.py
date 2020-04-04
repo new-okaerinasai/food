@@ -17,8 +17,9 @@ class CIFAR_10(CIFAR10):
                                              image=np.array(x))["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-
+        self.n_classes = 10
         if task == "ood":
+            self.n_classes = 5
             self.targets = np.array(self.targets)
             not_ood = (self.targets < 5)
             if mode == "train":
@@ -45,8 +46,9 @@ class CIFAR_100(CIFAR100):
                                              image=np.array(x))["image"]
         self.tag_to_class = self.class_to_idx.copy()
         self.class_to_id = {cl : cl for cl in self.tag_to_class.values()}
-
+        self.n_classes = 100
         if task == "ood":
+            self.n_classes = 50
             self.targets = np.array(self.targets)
             not_ood = (self.targets < 50)
             if mode == "train":
