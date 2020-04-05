@@ -44,8 +44,8 @@ def get_ood_recall_with_logits(y_true: torch.Tensor,
 
 
 def get_ood_histograms(y_true, y_pred, ood_label=0):
-    y_pred_ood, _ = F.softmax(y_pred[y_true == ood_label], dim=1).max(dim=1)
-    y_pred_nor, _ = F.softmax(y_pred[y_true != ood_label], dim=1).max(dim=1)
+    y_pred_ood, _ = F.softmax(y_pred[y_true == ood_label], dim=-1).max(dim=-1)
+    y_pred_nor, _ = F.softmax(y_pred[y_true != ood_label], dim=-1).max(dim=-1)
     # print(y_pred_ood.shape, y_pred_nor.shape)
     return y_pred_ood, y_pred_nor
 
@@ -57,25 +57,23 @@ def get_metrics_dict(y_true, y_pred, thr=None, ood_label=0):
     if thr is not None:
         metrics_dict["scalar"]["ood_recall"] = get_ood_recall_with_logits(y_true, y_pred, thr, ood_label)
         metrics_dict["scalar"]["ood_precision"] = get_ood_precision_with_logits(y_true, y_pred, thr, ood_label)
-    metrics_dict["hist"] = {}
-    metrics_dict["hist"]["ood_max_ood"], metrics_dict["hist"]["ood_max_known"] = get_ood_histograms(y_true, y_pred,
-                                                                                                    ood_label)
     return metrics_dict
 
-def log_hist_as_picture(y_true: torch.Tensor, y_pred: torch.Tensor,
+def log_hist_as_picture(y_true: torch.Tensor, y_pred: torch.Tensor, name: str,
                         ood_label=0, thr=None):
     print("OOD_LABEL = ", ood_label)
     print("y_true max", y_true.max(), y_true.shape)
-    metrics_dict = get_metrics_dict(y_true, y_pred, thr, ood_label)
+    hist = {}
+    hist["ood_max_ood"], hist["ood_max_known"] = get_ood_histograms(y_true, y_pred, ood_label)
 
     c = ["red", "blue"]
-    plt.figure(figsize=(20, 16))
+    plt.figure(figsize=(10, 8))
     plt.title("Known classes vs OOD max logit distribution")
-    for i, (names, hist) in enumerate(metrics_dict["hist"].items()):
+    for i, (names, hist) in enumerate(hist.items()):
         plt.hist(hist.cpu().detach().numpy(), bins=20, range=(0,1),
                  label=names, alpha=0.4, color=c[i % 2], density=True)
     plt.legend()
-    plt.savefig("hist.png")
+    plt.savefig(name)
     plt.close()
 
 def log_dict_with_writer(y_true: torch.Tensor, y_pred: torch.Tensor,

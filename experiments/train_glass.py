@@ -35,7 +35,6 @@ class Net2LastLayers(torch.nn.Module):
         self.features = nn.ModuleList(features).eval()
 
     def forward(self, x):
-        results = []
         x_new = x
         mod = nn.Sequential(*self.features[:-1])
         x_prelast = mod(x_new).squeeze()

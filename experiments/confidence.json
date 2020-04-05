@@ -1,16 +1,19 @@
 {
     "task": "ood",
-    "dataset": "cifar_10",
+    "dataset_train": "mnist",
+    "dataset_test": "mnist",
     "batch_size": 32,
-    "model": "resnet18",
+    "model": "resnet50",
     "lr": 1e-3,
     "epochs": 250,
     
     "data_path": "./data",
-    "logdir": "./logs",
+    "logdir": "./logs2",
     "checkpoints_dir": "./checkpoints",
     "checkpoint_each": 20,
     "keep_logs": false,
     "resume": null,
-    "log_each": 20
+    "log_each": 20,
+    
+    "budget": 0.3
 }

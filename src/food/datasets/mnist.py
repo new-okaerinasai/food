@@ -27,7 +27,7 @@ class MNIST(MNIST_torchvision):
         if task == "ood":
             not_ood_digits = [2, 3, 5, 6, 8]
             ood_digits = [0, 1, 4, 7, 9]
-            n_classes = len(ood_digits)
+            self.n_classes = len(ood_digits)
             self.class_to_id = {d : min(i, 5) for i, d in enumerate(not_ood_digits + ood_digits)}
             self.target_transform = lambda x: self.class_to_id[x]
 
