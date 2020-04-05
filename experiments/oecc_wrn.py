@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.models import resnet18, resnet50, mobilenet_v2
 import torchvision
-from albumentations import (Rotate, Compose, RandomBrightnessContrast,
+from albumentations import (Rotate, Resize, Compose, RandomBrightnessContrast,
                             Normalize, HorizontalFlip, VerticalFlip,
                             RandomResizedCrop, ShiftScaleRotate)
 from albumentations.pytorch import ToTensorV2 as ToTensor
@@ -27,6 +27,8 @@ import argparse
 import json
 import os
 from typing import Tuple
+
+from sklearn.metrics import (precision_recall_curve, roc_auc_score, f1_score, auc)
 
 
 def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer) -> Tuple:
@@ -44,21 +46,19 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer) -
     all_logits = []
     all_labels = []
 
-    for_metrics = []
+    is_ood = []
     with torch.no_grad():
         # OOD
         all_ood_probs = []
         for i, (images, labels) in enumerate(tqdm.tqdm(ood_dataloader)):
-            if i > 625:
-                break
             images, labels = images.to(device), labels.to(device).long()
             logits = model.forward(images)
             all_ood_probs.append(
                 F.softmax(logits, dim=1).cpu().detach().numpy())
-            for_metrics.append(np.zeros(len(images)))
+            is_ood.append(np.zeros(len(images)))
 
         # Known classes -- for validation
-        for images, labels in tqdm.tqdm(val_dataloader):
+        for i, (images, labels) in enumerate(tqdm.tqdm(val_dataloader)):
             images, labels = images.to(device), labels.to(device).long()
             logits = model.forward(images)
 
@@ -76,15 +76,25 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer) -
             all_losses.append(criterion(torch.from_numpy(
                 valid_logits), torch.from_numpy(valid_labels)).item())
             torch.cuda.empty_cache()
-            for_metrics.append(np.ones(len(images)))
-
+            is_ood.append(np.ones(len(images)))
     accuracy = np.concatenate(all_predictions).mean()
     all_probs = softmax(np.concatenate(all_logits), axis=1).max(1)
     all_ood_probs = np.concatenate(all_ood_probs).max(1)
+    y_pred_ood = np.concatenate([all_ood_probs, all_probs])
+    is_ood = np.concatenate(is_ood)
     all_labels = np.concatenate(all_labels)
     loss = np.mean(all_losses)
-    print("  Evaluation results: \n  Accuracy: {:.4f}\n  Loss: {:.4f}".format(
-        accuracy, loss))
+    a, b, _ = precision_recall_curve(is_ood, y_pred_ood)
+    print("""  Evaluation results: 
+                 Accuracy: {:.4f}
+                 Loss: {:.4f}
+                 AUC-ROC: {:.4f}
+                 PR-AUC: {:.4f}
+    """.format(
+        accuracy,
+        loss,
+        roc_auc_score(is_ood, y_pred_ood),
+        auc(np.sort(a), np.sort(b)[::-1])))
 
     plt.figure(figsize=(10, 8))
     plt.title("Known classes vs OOD max logit distribution")
@@ -147,6 +157,7 @@ def train(**kwargs):
     ], p=1)
 
     val_transforms = Compose([
+        Resize(32, 32),
         Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ToTensor(),
     ], p=1)
@@ -216,6 +227,8 @@ def train(**kwargs):
     for epoch in range(resume_epoch, epochs):
         print(f"Training, epoch {epoch + 1}")
         model.train()
+        val_loss, val_acc = evaluate(
+            model, val_dataloader, ood_dataloader_val, criterion, device, val_writer)
         for (images, labels), (ood_images, ood_labels) in tqdm.tqdm(zip(train_dataloader, ood_dataloader_train)):
             images, labels = images.to(device), labels.to(device).long()
             ood_images = ood_images.to(device)
