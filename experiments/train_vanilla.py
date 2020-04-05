@@ -76,11 +76,15 @@ def evaluate(model, dataloader, criterion, device, writer, T=None, eps=None) -> 
 
 
 def train(**kwargs):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="./vanilla.json", type=str,
-                        help="path to the config file")
-    args = parser.parse_args()
-    args = Config(args.config)
+    if kwargs is None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--config", default="./vanilla.json", type=str,
+                            help="path to the config file")
+        args = parser.parse_args()
+        args = Config(args.config)
+    else:
+        args = Config(kwargs.get("config", "./vanilla.json"))
+
     get_dataset_with_arg = {"tiny_imagenet": food.datasets.TinyImagenet,
                             "cifar_100": food.datasets.CIFAR_100,
                             "cifar_10": food.datasets.CIFAR_10}
@@ -143,6 +147,7 @@ def train(**kwargs):
     optimizer = torch.optim.Adam(lr=args.lr, params=model.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor = 0.2, threshold = 0.002, patience=10, threshold_mode='abs')
 
+    resume_epoch = 0
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
         model.load_state_dict(state_dict["model_state_dict"])
