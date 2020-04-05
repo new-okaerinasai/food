@@ -1,5 +1,6 @@
 import food
 from food.datasets import TinyImagenet, CIFAR_100
+from wrn import wrn
 from utils import Config
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
@@ -44,10 +45,40 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer, T
     all_labels = []
     print("Temerature = ", T)
     print("Epsilon = ", eps)
+    
+    # OOD
+    all_ood_probs = []
+    for i, (images, labels) in enumerate(tqdm.tqdm(ood_dataloader)):
+        if i > 625:
+            break
+        images, labels = images.to(device), labels.to(device).long()
+        for p in model.parameters():
+            if p.grad is not None:
+                p.grad.zero_()
+        if T is not None:
+            # ODIN case: this is simple
+            # Just make a slight adversarial attack on the images
+            # source: https://arxiv.org/pdf/1706.02690.pdf
+            images.requires_grad = True
+            logits = model.forward(images)
+            logits = logits / T
+            pred_labels = logits.argmax(-1)
+            pred_loss = criterion(logits, pred_labels)
+            pred_loss.backward()
+            corrupted_images = images - eps * torch.sign(-(images.grad))
+            logits = model.forward(corrupted_images)
+            images.grad.zero_()
+        else:
+            logits = model.forward(images)
+
+        all_ood_probs.append(F.softmax(logits, dim=1).cpu().detach().numpy())
+
+    all_ood_probs = np.concatenate(all_ood_probs).max(1)
     for images, labels in tqdm.tqdm(val_dataloader):
         images, labels = images.to(device), labels.to(device).long()
         for p in model.parameters():
-            p.grad.zero_()
+            if p.grad is not None:
+                p.grad.zero_()
         if T is not None:
             # ODIN case: this is simple
             # Just make a slight adversarial attack on the images
@@ -77,46 +108,21 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer, T
         all_losses.append(criterion(torch.from_numpy(valid_logits), torch.from_numpy(valid_labels)).item())
         torch.cuda.empty_cache()
 
-    # OOD
-    all_ood_probs = []
-
-    for images, labels in tqdm.tqdm(ood_dataloader):
-        images, labels = images.to(device), labels.to(device).long()
-        for p in model.parameters():
-            p.grad.zero_()
-        if T is not None:
-            # ODIN case: this is simple
-            # Just make a slight adversarial attack on the images
-            # source: https://arxiv.org/pdf/1706.02690.pdf
-            images.requires_grad = True
-            logits = model.forward(images)
-            logits = logits / T
-            pred_labels = logits.argmax(-1)
-            pred_loss = criterion(logits, pred_labels)
-            pred_loss.backward()
-            corrupted_images = images - eps * torch.sign(-(images.grad))
-            logits = model.forward(corrupted_images)
-            images.grad.zero_()
-        else:
-            logits = model.forward(images)
-
-        all_ood_probs.append(F.softmax(logits, dim=1).cpu().detach().numpy())
-
     accuracy = np.concatenate(all_predictions).mean()
     all_probs = softmax(np.concatenate(all_logits), axis=1).max(1)
     all_labels = np.concatenate(all_labels)
-    all_ood_probs = np.concatenate(all_ood_probs).max(1)
-
-    plt.figure(figsize=(10, 8))
-    plt.title("Known classes vs OOD max logit distribution")
-    plt.hist(all_probs, bins=20, color="blue", alpha=0.5, label="max_softmax_probability_true", density=True)
-    plt.hist(all_ood_probs, bins=20, color="red", alpha=0.5, label="max_softmax_probability_ood", density=True)
-    plt.savefig("hist.png")
-    #log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
-
     loss = np.mean(all_losses)
     print("  Evaluation results: \n  Accuracy: {:.4f}\n  Loss: {:.4f}".format(
         accuracy, loss))
+    
+    plt.figure(figsize=(10, 8))
+    plt.title("Known classes vs OOD max logit distribution")
+    plt.hist(all_probs, range=(0,1), bins=20, color="blue", alpha=0.5, label="max_softmax_probability_true", density=True)
+    plt.hist(all_ood_probs, range=(0,1), bins=20, color="red", alpha=0.5, label="max_softmax_probability_ood", density=True)
+    plt.legend()
+    plt.savefig("hist.png")
+    #log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
+
     return loss, accuracy
 
 
@@ -138,14 +144,22 @@ def train(**kwargs):
             shutil.rmtree(args.logdir)
         except FileNotFoundError:
             pass
-    
-    batch_size = kwargs.get('batch_size', args.batch_size)
-    model = kwargs.get('model', args.model).lower()
-    dataset = kwargs.get('dataset', args.dataset).lower()
-    epochs = kwargs.get('epochs', args.epochs)
+
+    batch_size = args.batch_size
+    batch_size = kwargs.get('batch_size', batch_size)
+
+    model = args.model.lower()
+    model = kwargs.get('model', model).lower()
+
+    dataset = args.dataset.lower()
+    dataset = kwargs.get('dataset', dataset).lower()
+
+    epochs = args.epochs
+    epochs = kwargs.get('epochs', epochs)
+
     test_b = kwargs.get('test', False)
 
-    ds_class = get_dataset_with_arg[dataset]
+    ds_class = get_dataset_with_arg[dataset.lower()]
 
     train_transforms = Compose([
         HorizontalFlip(p=0.5),
@@ -166,10 +180,11 @@ def train(**kwargs):
                                                 transform=val_transforms)
     ood_dataset = TinyImagenet(args.data_path, mode="train", task="vanilla", transform=val_transforms)
 
-    model = getattr(torchvision.models, args.model)(pretrained=True)
+    model = wrn(depth=28, num_classes=train_dataset.n_classes, widen_factor=10, dropRate=0.3)
+    #getattr(torchvision.models, args.model)(pretrained=True)
     print(model)
     # The last fully-connected layers in torchvision resnet are called fc
-    model.fc = nn.Linear(model.fc.in_features, train_dataset.n_classes)
+    # model.fc = nn.Linear(model.fc.in_features, train_dataset.n_classes)
     print(model.__class__.__name__)
     print("Total number of model's parameters: ",
           np.sum([p.numel() for p in model.parameters() if p.requires_grad]))
@@ -190,10 +205,15 @@ def train(**kwargs):
     resume_epoch = 0
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
-        model.load_state_dict(state_dict["model_state_dict"])
-        optimizer.load_state_dict(state_dict["optimizer_state_dict"])
-        scheduler.load_state_dict(state_dict["scheduler_state_dict"])
-        resume_epoch = state_dict["epoch"]
+        state_dict = state_dict["state_dict"]
+        old_state_dict = model.state_dict()
+        for key in state_dict:
+            old_state_dict[key[7:]] = state_dict[key]
+        model.load_state_dict(old_state_dict)
+        # model.load_state_dict(state_dict["model_state_dict"])
+        # optimizer.load_state_dict(state_dict["optimizer_state_dict"])
+        # scheduler.load_state_dict(state_dict["scheduler_state_dict"])
+        # resume_epoch = state_dict["epoch"]
 
     os.makedirs(os.path.join(args.logdir, "train_logs"), exist_ok=True)
     os.makedirs(os.path.join(args.logdir, "val_logs"), exist_ok=True)
@@ -203,6 +223,9 @@ def train(**kwargs):
     for epoch in range(resume_epoch, epochs):
         print(f"Training, epoch {epoch + 1}")
         model.train()
+        evaluate(
+            model, val_dataloader, ood_dataloader, criterion, device, val_writer, T=args.temperature, eps=args.eps)
+        exit(0)
         for images, labels in train_dataloader:
             images, labels = images.to(device), labels.to(device).long()
             optimizer.zero_grad()
@@ -211,11 +234,12 @@ def train(**kwargs):
             predictions = logits.argmax(dim=1)
             accuracy_t = torch.mean((predictions == labels).float()).item()
             if global_step % args.log_each == 0:
-                # TODO
-                train_writer.add_scalar("Loss_BCE", loss, global_step=global_step)
-                train_writer.add_scalar("Accuracy", accuracy_t, global_step=global_step)
-                train_writer.add_scalar("Learning_rate", scheduler.get_lr()[-1], global_step=global_step)
-                # log_dict_with_writer(labels, logits, train_writer, global_step=global_step)
+                # TODO: train logging for tensorboard
+                # train_writer.add_scalar("Loss_BCE", loss, global_step=global_step)
+                # train_writer.add_scalar("Accuracy", accuracy_t, global_step=global_step)
+                # train_writer.add_scalar("Learning_rate", scheduler.get_lr()[-1], global_step=global_step)
+                #log_dict_with_writer(labels, logits, train_writer, global_step=global_step)
+                pass
             loss.backward()
             optimizer.step()
             global_step += 1
@@ -225,7 +249,7 @@ def train(**kwargs):
         val_writer.add_scalar("Loss_BCE", val_loss, global_step=global_step)
         val_writer.add_scalar("Accuracy", val_acc, global_step=global_step)
 
-        if (epoch + 1) % args.checkpoint_each == 0:  # prevent not saving 999 epoch 
+        if epoch % args.checkpoint_each == 0:
             print("Saving checkpoint...")
             with open(os.path.join(args.checkpoints_dir, f"epoch_{epoch}_{global_step}.pt"), "wb") as f:
                 torch.save({"model_state_dict": model.state_dict(),
