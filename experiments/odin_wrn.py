@@ -1,5 +1,6 @@
 import food
 from food.datasets import TinyImagenet, CIFAR_100
+from wrn import wrn
 from utils import Config
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
@@ -44,10 +45,40 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer, T
     all_labels = []
     print("Temerature = ", T)
     print("Epsilon = ", eps)
+    
+    # OOD
+    all_ood_probs = []
+    for i, (images, labels) in enumerate(tqdm.tqdm(ood_dataloader)):
+        if i > 625:
+            break
+        images, labels = images.to(device), labels.to(device).long()
+        for p in model.parameters():
+            if p.grad is not None:
+                p.grad.zero_()
+        if T is not None:
+            # ODIN case: this is simple
+            # Just make a slight adversarial attack on the images
+            # source: https://arxiv.org/pdf/1706.02690.pdf
+            images.requires_grad = True
+            logits = model.forward(images)
+            logits = logits / T
+            pred_labels = logits.argmax(-1)
+            pred_loss = criterion(logits, pred_labels)
+            pred_loss.backward()
+            corrupted_images = images - eps * torch.sign(-(images.grad))
+            logits = model.forward(corrupted_images)
+            images.grad.zero_()
+        else:
+            logits = model.forward(images)
+
+        all_ood_probs.append(F.softmax(logits, dim=1).cpu().detach().numpy())
+
+    all_ood_probs = np.concatenate(all_ood_probs).max(1)
     for images, labels in tqdm.tqdm(val_dataloader):
         images, labels = images.to(device), labels.to(device).long()
         for p in model.parameters():
-            p.grad.zero_()
+            if p.grad is not None:
+                p.grad.zero_()
         if T is not None:
             # ODIN case: this is simple
             # Just make a slight adversarial attack on the images
@@ -77,46 +108,21 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer, T
         all_losses.append(criterion(torch.from_numpy(valid_logits), torch.from_numpy(valid_labels)).item())
         torch.cuda.empty_cache()
 
-    # OOD
-    all_ood_probs = []
-
-    for images, labels in tqdm.tqdm(ood_dataloader):
-        images, labels = images.to(device), labels.to(device).long()
-        for p in model.parameters():
-            p.grad.zero_()
-        if T is not None:
-            # ODIN case: this is simple
-            # Just make a slight adversarial attack on the images
-            # source: https://arxiv.org/pdf/1706.02690.pdf
-            images.requires_grad = True
-            logits = model.forward(images)
-            logits = logits / T
-            pred_labels = logits.argmax(-1)
-            pred_loss = criterion(logits, pred_labels)
-            pred_loss.backward()
-            corrupted_images = images - eps * torch.sign(-(images.grad))
-            logits = model.forward(corrupted_images)
-            images.grad.zero_()
-        else:
-            logits = model.forward(images)
-
-        all_ood_probs.append(F.softmax(logits, dim=1).cpu().detach().numpy())
-
     accuracy = np.concatenate(all_predictions).mean()
     all_probs = softmax(np.concatenate(all_logits), axis=1).max(1)
     all_labels = np.concatenate(all_labels)
-    all_ood_probs = np.concatenate(all_ood_probs).max(1)
-
-    plt.figure(figsize=(10, 8))
-    plt.title("Known classes vs OOD max logit distribution")
-    plt.hist(all_probs, bins=20, color="blue", alpha=0.5, label="max_softmax_probability_true", density=True)
-    plt.hist(all_ood_probs, bins=20, color="red", alpha=0.5, label="max_softmax_probability_ood", density=True)
-    plt.savefig("hist.png")
-    #log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
-
     loss = np.mean(all_losses)
     print("  Evaluation results: \n  Accuracy: {:.4f}\n  Loss: {:.4f}".format(
         accuracy, loss))
+    
+    plt.figure(figsize=(10, 8))
+    plt.title("Known classes vs OOD max logit distribution")
+    plt.hist(all_probs, range=(0,1), bins=20, color="blue", alpha=0.5, label="max_softmax_probability_true", density=True)
+    plt.hist(all_ood_probs, range=(0,1), bins=20, color="red", alpha=0.5, label="max_softmax_probability_ood", density=True)
+    plt.legend()
+    plt.savefig("hist.png")
+    #log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
+
     return loss, accuracy
 
 
@@ -174,10 +180,11 @@ def train(**kwargs):
                                                 transform=val_transforms)
     ood_dataset = TinyImagenet(args.data_path, mode="train", task="vanilla", transform=val_transforms)
 
-    model = getattr(torchvision.models, args.model)(pretrained=True)
+    model = wrn(depth=28, num_classes=train_dataset.n_classes, widen_factor=10, dropRate=0.3)
+    #getattr(torchvision.models, args.model)(pretrained=True)
     print(model)
     # The last fully-connected layers in torchvision resnet are called fc
-    model.fc = nn.Linear(model.fc.in_features, train_dataset.n_classes)
+    # model.fc = nn.Linear(model.fc.in_features, train_dataset.n_classes)
     print(model.__class__.__name__)
     print("Total number of model's parameters: ",
           np.sum([p.numel() for p in model.parameters() if p.requires_grad]))
@@ -198,10 +205,15 @@ def train(**kwargs):
     resume_epoch = 0
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
-        model.load_state_dict(state_dict["model_state_dict"])
-        optimizer.load_state_dict(state_dict["optimizer_state_dict"])
-        scheduler.load_state_dict(state_dict["scheduler_state_dict"])
-        resume_epoch = state_dict["epoch"]
+        state_dict = state_dict["state_dict"]
+        old_state_dict = model.state_dict()
+        for key in state_dict:
+            old_state_dict[key[7:]] = state_dict[key]
+        model.load_state_dict(old_state_dict)
+        # model.load_state_dict(state_dict["model_state_dict"])
+        # optimizer.load_state_dict(state_dict["optimizer_state_dict"])
+        # scheduler.load_state_dict(state_dict["scheduler_state_dict"])
+        # resume_epoch = state_dict["epoch"]
 
     os.makedirs(os.path.join(args.logdir, "train_logs"), exist_ok=True)
     os.makedirs(os.path.join(args.logdir, "val_logs"), exist_ok=True)
@@ -211,6 +223,9 @@ def train(**kwargs):
     for epoch in range(resume_epoch, epochs):
         print(f"Training, epoch {epoch + 1}")
         model.train()
+        evaluate(
+            model, val_dataloader, ood_dataloader, criterion, device, val_writer, T=args.temperature, eps=args.eps)
+        exit(0)
         for images, labels in train_dataloader:
             images, labels = images.to(device), labels.to(device).long()
             optimizer.zero_grad()
