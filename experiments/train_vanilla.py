@@ -120,7 +120,7 @@ def train(**kwargs):
 
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
     # if torch.cuda.is_available(): TODO
     #    train_dataloader = DataPrefetcher(train_dataloader)
     #    val_dataloader = DataPrefetcher(val_dataloader)
