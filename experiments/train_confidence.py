@@ -1,5 +1,5 @@
 import food
-from utils import Config, encode_onehot
+from utils import Config, encode_onehot, ConfidenceNet, GrayModel
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
 
@@ -14,7 +14,7 @@ from torchvision.models import resnet18, resnet50, mobilenet_v2
 
 from albumentations import (Rotate, Compose, RandomBrightnessContrast,
                             Normalize, HorizontalFlip, VerticalFlip,
-                            RandomResizedCrop, ShiftScaleRotate)
+                            RandomResizedCrop, ShiftScaleRotate, Resize, Lambda)
 from albumentations.pytorch import ToTensorV2 as ToTensor
 from PIL import Image
 
@@ -26,38 +26,8 @@ import argparse
 import os
 from typing import Tuple
 
-class ConfidenceNet(nn.Module):
-    def __init__(self, model, n_classes, last=True):
-        '''
-        Class to modify neural network model to output 
-        prediction vector and confidence value 
-        (https://arxiv.org/pdf/1802.04865v1.pdf)
 
-        :param model: model to modify
-        :param n_classes: number of classes
-        :param last: bool value indicates whether to replace last layer of model with classification 
-                     layer to n_classes or add it after (True if want to replace) 
-        '''
-        super().__init__()
-        self.features = nn.ModuleList(list(model.children()))
-        if last:
-            self.model = nn.Sequential(*self.features[:-1])
-            in_features = self.features[-1].in_features
-        else:
-            self.model = nn.Sequential(*self.features)
-            in_features = self.features[-1].out_features
-
-        self.classification = nn.Linear(in_features, n_classes)
-        self.confidence = nn.Linear(in_features, 1)
-
-    def forward(self, x):
-        out = self.model(x).squeeze()  # [B, C, 1, 1]
-        pred = self.classification(out)
-        confidence = self.confidence(out)
-        return pred, confidence
-
-
-def evaluate(model, dataloader, criterion, device, writer) -> Tuple:
+def evaluate(model, dataloader, criterion, device, logdir) -> Tuple:
     """
     Evaluate model. This function prints validation loss and accuracy.
     :param model: model to evaluate
@@ -93,17 +63,18 @@ def evaluate(model, dataloader, criterion, device, writer) -> Tuple:
             all_labels.append(labels)
             all_confs.append(conf)
 
-            # all_losses.append(criterion(valid_logits, valid_labels).item())
         accuracy = torch.cat(all_predictions).mean()
         all_logits = torch.cat(all_logits)
         all_labels = torch.cat(all_labels)
         all_confs = torch.cat(all_confs)
+        print(all_logits, all_labels, all_confs)
+        print(all_logits.shape, all_labels.shape, all_confs.shape)
         conf_min, conf_max, conf_avg = all_confs.min(), all_confs.max(), all_confs.mean()
-        # print(all_labels.shape, all_logits.shape)
-        log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
+        log_hist_as_picture(all_labels, all_logits, os.path.join(logdir, "hist_logits.png"), ood_label=logits.shape[1])
+        log_hist_as_picture(all_labels, all_confs, os.path.join(logdir, "hist_confs.png"), ood_label=logits.shape[1])
         
         print("  Evaluation results: \n  Accuracy: {:.4f}\n "
-              "  Confidence:\n\tmin -{:.4f}\n\tmax -{:.4f}\n\tmean -{:.4f}".format(accuracy, conf_min, conf_max, conf_avg))
+              "  Confidence:\n\tmin {:.4f}\n\tmax {:.4f}\n\tmean {:.4f}".format(accuracy, conf_min, conf_max, conf_avg))
     return conf_min, conf_max, conf_avg, accuracy
 
 
@@ -113,60 +84,70 @@ def train(**kwargs):
                         help="path to the config file")
     args = parser.parse_args()
     args = Config(args.config)
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     get_dataset_with_arg = {"tiny_imagenet": food.datasets.TinyImagenet,
                             "cifar_100": food.datasets.CIFAR_100,
-                            "cifar_10": food.datasets.CIFAR_10}
+                            "cifar_10": food.datasets.CIFAR_10,
+                            "mnist": food.datasets.MNIST,
+                            "fmnist": food.datasets.FashionMNIST}
     if not args.keep_logs:
         try:
             shutil.rmtree(args.logdir)
         except FileNotFoundError:
             pass
-    
+
     batch_size = kwargs.get('batch_size', args.batch_size)
-    model = kwargs.get('model', args.model).lower()
-    dataset = kwargs.get('dataset', args.dataset).lower()
+    base_model = kwargs.get('model', args.model).lower()
+    dataset_train = kwargs.get('dataset_train', args.dataset_train).lower()
+    dataset_test = kwargs.get('dataset_test', args.dataset_test).lower()
     epochs = kwargs.get('epochs', args.epochs)
-    test_b = kwargs.get('test', False)
+    # test_b = kwargs.get('test', False)
 
-    ds_class = get_dataset_with_arg[dataset]
+    ds_class_train = get_dataset_with_arg[dataset_train]
+    ds_class_test = get_dataset_with_arg[dataset_test]
 
-    train_transforms = Compose([
-            HorizontalFlip(p=0.5),
-            RandomResizedCrop(32, 32, p=0.5),
-            Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            ToTensor(),
-    ], p=1)
-    val_transforms = Compose([
-        Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ToTensor(),
-    ], p=1)
+    p_flip = 0.5 if dataset_train != "mnist" else 0
+    norm_train = Normalize((0.4914, 0.4822, 0.4465), 
+                           (0.2023, 0.1994, 0.2010))
+    norm_test = norm_train
+    if 'mnist' in dataset_train:
+        norm_train = Normalize((0.1307,), (0.3081,))
+    if 'mnist' in dataset_test:
+        norm_test = Normalize((0.1307,), (0.3081,))
+    train_transforms = Compose([HorizontalFlip(p=p_flip),
+                                RandomResizedCrop(32, 32, p=0.5),
+                                norm_train,
+                                ToTensor()])
 
-    train_dataset = ds_class(args.data_path, mode="train", task=args.task.lower(),
+    val_transforms = Compose([norm_test,
+                              ToTensor()])
+
+    train_dataset = ds_class_train(args.data_path, mode="train", task=args.task.lower(),
                                                 transform=train_transforms)
-    val_dataset = ds_class(args.data_path, mode="val", task=args.task.lower(),
+    val_dataset = ds_class_test(args.data_path, mode="val", task=args.task.lower(),
                                                 transform=val_transforms)
-    print(train_dataset[0])
-    model = getattr(torchvision.models, args.model)(num_classes=train_dataset.n_classes)
-    model = ConfidenceNet(model, n_classes=train_dataset.n_classes, last=True)
+
+    model = getattr(torchvision.models, base_model)(num_classes=5)
+    if 'mnist' in dataset_train:
+        model = GrayModel(model)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
+
+    # ==================================================================================
+
+    model = ConfidenceNet(model, 5).to(device)
+    
     print(model)
     print("Total number of model's parameters: ",
           np.sum([p.numel() for p in model.parameters() if p.requires_grad]))
-
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
-    # if torch.cuda.is_available(): TODO
-    #    train_dataloader = DataPrefetcher(train_dataloader)
-    #    val_dataloader = DataPrefetcher(val_dataloader)
-    #    pass
-
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    model.to(device)
 
     criterion = nn.NLLLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,
                                 momentum=0.9, nesterov=True, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[60, 120, 160], gamma=0.2)
 
+    # ==================================================================================
+ 
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
         model.load_state_dict(state_dict["model_state_dict"])
@@ -177,23 +158,22 @@ def train(**kwargs):
     val_writer = SummaryWriter(os.path.join(args.logdir, "val_logs"))
     global_step = 0
 
+    # ==================================================================================
+
     lmbda = 0.1  # initial lambda
     for epoch in range(epochs):
 
         print(f"Training, epoch {epoch + 1}")
         model.train()
+        # for images, labels in list(train_dataloader)[:3]:
         for images, labels in train_dataloader:
             images, labels = images.to(device), labels.to(device)
-            labels_oh = encode_onehot(labels, train_dataset.n_classes)
+            labels_oh = encode_onehot(labels, 5)
             optimizer.zero_grad()
             
             logits, confidence = model.forward(images)
             pred = F.softmax(logits, dim=-1)
             confidence = torch.sigmoid(confidence)
-
-            # eps = 1e-12
-            # pred = torch.clamp(pred, 0. + eps, 1. - eps)
-            # confidence = torch.clamp(confidence, 0. + eps, 1. - eps)
 
             c = torch.bernoulli(torch.rand(confidence.size())).to(device)  # uniformly random number
             conf = confidence * c + (1 - c)
@@ -214,7 +194,6 @@ def train(**kwargs):
                 # TODO
                 train_writer.add_scalar("Loss_CE", loss_xe, global_step=global_step)
                 train_writer.add_scalar("Loss_Conf", loss_confidence, global_step=global_step)
-                train_writer.add_scalar("Loss", loss, global_step=global_step)
                 train_writer.add_scalar("Accuracy", accuracy_t, global_step=global_step)
                 train_writer.add_scalar("Lambda", lmbda, global_step=global_step)
                 train_writer.add_scalar("Learning_rate", scheduler.get_lr()[-1], global_step=global_step)
@@ -223,8 +202,12 @@ def train(**kwargs):
             optimizer.step()
             global_step += 1
         print("Validating...")
-        conf_min, conf_max, conf_avg, val_acc = evaluate(model, val_dataloader, criterion, device, val_writer)
-        val_writer.add_image("hist", torchvision.transforms.ToTensor()(Image.open("hist.png").convert("RGB")), global_step=global_step)
+        conf_min, conf_max, conf_avg, val_acc = evaluate(model, val_dataloader, criterion, device, args.logdir)
+        val_writer.add_image("Logits", torchvision.transforms.ToTensor()(
+            Image.open(os.path.join(args.logdir, "hist_logits.png")).convert("RGB")), global_step=global_step)
+        val_writer.add_image("Confidences", torchvision.transforms.ToTensor()(
+            Image.open(os.path.join(args.logdir, "hist_confs.png")).convert("RGB")), global_step=global_step)
+        val_writer.add_scalar("Conf", conf_avg, global_step=global_step)
         val_writer.add_scalar("Conf", conf_min, global_step=global_step)
         val_writer.add_scalar("Conf", conf_max, global_step=global_step)
         val_writer.add_scalar("Conf", conf_avg, global_step=global_step)
