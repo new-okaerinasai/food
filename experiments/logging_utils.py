@@ -67,7 +67,6 @@ def log_hist_as_picture(y_true: torch.Tensor, y_pred: torch.Tensor,
     print("OOD_LABEL = ", ood_label)
     print("y_true max", y_true.max(), y_true.shape)
     metrics_dict = get_metrics_dict(y_true, y_pred, thr, ood_label)
-    #plt.figure(figsize=(10, 8))
     c = ["red", "blue"]
     plt.figure(figsize=(10, 8))
     plt.title("Known classes vs OOD max logit distribution")

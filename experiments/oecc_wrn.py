@@ -309,9 +309,6 @@ def train(**kwargs):
                             "optimizer_state_dict": optimizer.state_dict()}, f)
         scheduler.step(val_acc)
 
-    if test_b:
-        return logits, loss, predictions, val_loss, val_acc
-
 
 if __name__ == '__main__':
     train()
