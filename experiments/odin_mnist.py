@@ -1,13 +1,12 @@
 import food
-from food.datasets import TinyImagenet, CIFAR_100
+from food.datasets import TinyImagenet, CIFAR_100, FashionMNIST, MNIST
 from wrn import wrn
-from utils import Config
+from utils import Config, MnistNet
 
 from logging_utils import log_dict_with_writer, log_hist_as_picture
 
 import torch
 from torch import nn
-from torch.nn import DataParallel
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.models import resnet18, resnet50, mobilenet_v2
@@ -29,7 +28,7 @@ import json
 import os
 from typing import Tuple
 
-from sklearn.metrics import (precision_recall_curve, roc_auc_score, f1_score, auc, average_precision_score)
+from sklearn.metrics import (precision_recall_curve, roc_auc_score, f1_score, auc)
 
 
 def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer,
@@ -111,8 +110,7 @@ T=None, eps=None) -> Tuple:
     is_ood = np.concatenate(is_ood)
     all_labels = np.concatenate(all_labels)
     loss = np.mean(all_losses)
-    print(is_ood, y_pred_ood)
-    ap = average_precision_score(is_ood, y_pred_ood)
+    a, b, _ = precision_recall_curve(is_ood, y_pred_ood)
     print("""  Evaluation results: 
                  Accuracy: {:.4f}
                  Loss: {:.4f}
@@ -122,7 +120,7 @@ T=None, eps=None) -> Tuple:
         accuracy,
         loss,
         roc_auc_score(is_ood, y_pred_ood),
-        ap))
+        auc(np.sort(a), np.sort(b)[::-1])))
 
     plt.figure(figsize=(10, 8))
     plt.title("Known classes vs OOD max logit distribution")
@@ -131,7 +129,7 @@ T=None, eps=None) -> Tuple:
     plt.hist(all_ood_probs, range=(0, 1), bins=20, color="red",
              alpha=0.5, label="max_softmax_probability_ood", density=True)
     plt.legend()
-    plt.savefig("hist_oecc.png")
+    plt.savefig("hist_odin_mnist.png")
     # log_hist_as_picture(all_labels, all_logits, ood_label=logits.shape[1])
     return loss, accuracy
 
@@ -148,7 +146,8 @@ def train(**kwargs):
     print(json.dumps(args.__dict__, indent=4))
     get_dataset_with_arg = {"tiny_imagenet": food.datasets.TinyImagenet,
                             "cifar_100": food.datasets.CIFAR_100,
-                            "cifar_10": food.datasets.CIFAR_10}
+                            "cifar_10": food.datasets.CIFAR_10,
+                            "mnist": MNIST}
     if not args.keep_logs:
         try:
             shutil.rmtree(args.logdir)
@@ -159,6 +158,8 @@ def train(**kwargs):
         A_tr = 0.9500  # Training accuracy of CIFAR-10 baseline model
     elif args.dataset == 'cifar_100':
         A_tr = 0.8108
+    elif args.dataset == 'mnist':
+        A_tr = 0.9885
 
     batch_size = args.batch_size
     batch_size = kwargs.get('batch_size', batch_size)
@@ -177,30 +178,22 @@ def train(**kwargs):
     ds_class = get_dataset_with_arg[dataset.lower()]
 
     train_transforms = Compose([
-        HorizontalFlip(p=0.5),
-        # RandomResizedCrop(32, 32, p=0.5),
-        Rotate(15),
-        Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ToTensor(),
-    ], p=1)
+                           Normalize((0.1307,), (0.3081,)),
+                           ToTensor()
+                       ])
 
-    val_transforms = Compose([
-        Resize(32, 32),
-        Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ToTensor(),
-    ], p=1)
+    val_transforms = train_transforms
 
     train_dataset = ds_class(args.data_path, mode="train", task=args.task.lower(),
                              transform=train_transforms)
     val_dataset = ds_class(args.data_path, mode="val", task=args.task.lower(),
                                                 transform=val_transforms)
-    ood_dataset_train = TinyImagenet(
+    ood_dataset_train = FashionMNIST(
         args.data_path, mode="train", task="vanilla", transform=val_transforms)
-    ood_dataset_val = TinyImagenet(
+    ood_dataset_val = FashionMNIST(
         args.data_path, mode="val", task="vanilla", transform=val_transforms)
 
-    model = wrn(depth=28, num_classes=train_dataset.n_classes,
-                widen_factor=10, dropRate=0.3)
+    model = MnistNet()
     print(model)
     print(model.__class__.__name__)
     print("Total number of model's parameters: ",
@@ -216,15 +209,13 @@ def train(**kwargs):
         ood_dataset_val, batch_size=batch_size, shuffle=False, drop_last=False)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    
     model.to(device)
 
     criterion = nn.CrossEntropyLoss()
 
     # Optimizer
     optimizer = torch.optim.SGD(
-        model.parameters(), args.lr, momentum=0.9,
-        weight_decay=0.0005, nesterov=True)
+        model.parameters(), args.lr, momentum=0.5)
 
     # Learning Rate
     def cosine_annealing(step, total_steps, lr_max, lr_min):
@@ -242,13 +233,12 @@ def train(**kwargs):
     resume_epoch = 0
     if args.resume is not None:
         state_dict = torch.load(args.resume, map_location=device)
-        state_dict = state_dict["state_dict"]
+        # state_dict = state_dict["state_dict"]
         old_state_dict = model.state_dict()
         for key in state_dict:
-            old_state_dict[key[7:]] = state_dict[key]
+            old_state_dict[key] = state_dict[key]
         model.load_state_dict(old_state_dict)
 
-    # model = DataParallel(model)
     os.makedirs(os.path.join(args.logdir, "train_logs"), exist_ok=True)
     os.makedirs(os.path.join(args.logdir, "val_logs"), exist_ok=True)
     # train_writer = SummaryWriter(os.path.join(args.logdir, "train_logs"))
