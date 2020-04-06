@@ -31,7 +31,8 @@ from typing import Tuple
 from sklearn.metrics import (precision_recall_curve, roc_auc_score, f1_score, auc)
 
 
-def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer) -> Tuple:
+def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer,
+T=None, eps=None) -> Tuple:
     """
     Evaluate model. This function prints validation loss and accuracy.
     :param model: model to evaluate
@@ -47,36 +48,61 @@ def evaluate(model, val_dataloader, ood_dataloader, criterion, device, writer) -
     all_labels = []
 
     is_ood = []
-    with torch.no_grad():
-        # OOD
-        all_ood_probs = []
-        for i, (images, labels) in enumerate(tqdm.tqdm(ood_dataloader)):
-            images, labels = images.to(device), labels.to(device).long()
+    # OOD
+    all_ood_probs = []
+    print("Temperature =", T)
+    for i, (images, labels) in enumerate(tqdm.tqdm(ood_dataloader)):
+        images, labels = images.to(device), labels.to(device).long()
+        if T is not None:
+            # ODIN case: this is simple
+            # Just make a slight adversarial attack on the images
+            # source: https://arxiv.org/pdf/1706.02690.pdf
+            images.requires_grad = True
             logits = model.forward(images)
-            all_ood_probs.append(
-                F.softmax(logits, dim=1).cpu().detach().numpy())
-            is_ood.append(np.zeros(len(images)))
-
-        # Known classes -- for validation
-        for i, (images, labels) in enumerate(tqdm.tqdm(val_dataloader)):
-            images, labels = images.to(device), labels.to(device).long()
+            logits = logits / T
+            pred_labels = logits.argmax(-1)
+            pred_loss = criterion(logits, pred_labels)
+            pred_loss.backward()
+            corrupted_images = images - eps * torch.sign(-(images.grad))
+            logits = model.forward(corrupted_images)
+        else:
             logits = model.forward(images)
+        all_ood_probs.append(
+            F.softmax(logits, dim=1).cpu().detach().numpy())
+        is_ood.append(np.zeros(len(images)))
 
-            labels = labels.cpu().detach().numpy()
-            logits = logits.cpu().detach().numpy()
-            all_logits.append(logits)
-            all_labels.append(labels)
-            # just not to write additional code for ood and vanilla task
-            # valid mask corresponds only for known labels
-            valid_logits_mask = (labels < logits.shape[1])
-            valid_logits = logits[valid_logits_mask]
-            valid_labels = labels[valid_logits_mask]
-            valid_predictions = valid_logits.argmax(1)
-            all_predictions.append((valid_predictions == valid_labels))
-            all_losses.append(criterion(torch.from_numpy(
-                valid_logits), torch.from_numpy(valid_labels)).item())
-            torch.cuda.empty_cache()
-            is_ood.append(np.ones(len(images)))
+    # Known classes -- for validation
+    for i, (images, labels) in enumerate(tqdm.tqdm(val_dataloader)):
+        images, labels = images.to(device), labels.to(device).long()
+        if T is not None:
+            # ODIN case: this is simple
+            # Just make a slight adversarial attack on the images
+            # source: https://arxiv.org/pdf/1706.02690.pdf
+            images.requires_grad = True
+            logits = model.forward(images)
+            logits = logits / T
+            pred_labels = logits.argmax(-1)
+            pred_loss = criterion(logits, pred_labels)
+            pred_loss.backward()
+            corrupted_images = images - eps * torch.sign(-(images.grad))
+            logits = model.forward(corrupted_images)
+        else:
+            logits = model.forward(images)
+        labels = labels.cpu().detach().numpy()
+        logits = logits.cpu().detach().numpy()
+        all_logits.append(logits)
+        all_labels.append(labels)
+        # just not to write additional code for ood and vanilla task
+        # valid mask corresponds only for known labels
+        valid_logits_mask = (labels < logits.shape[1])
+        valid_logits = logits[valid_logits_mask]
+        valid_labels = labels[valid_logits_mask]
+        valid_predictions = valid_logits.argmax(1)
+        all_predictions.append((valid_predictions == valid_labels))
+        all_losses.append(criterion(torch.from_numpy(
+            valid_logits), torch.from_numpy(valid_labels)).item())
+        torch.cuda.empty_cache()
+        is_ood.append(np.ones(len(images)))
     accuracy = np.concatenate(all_predictions).mean()
     all_probs = softmax(np.concatenate(all_logits), axis=1).max(1)
     all_ood_probs = np.concatenate(all_ood_probs).max(1)
@@ -228,7 +254,9 @@ def train(**kwargs):
         print(f"Training, epoch {epoch + 1}")
         model.train()
         val_loss, val_acc = evaluate(
-            model, val_dataloader, ood_dataloader_val, criterion, device, val_writer)
+            model, val_dataloader, ood_dataloader_val, criterion, device, val_writer,
+            T=args.temperature, eps=args.eps)
+        exit(0)
         for (images, labels), (ood_images, ood_labels) in tqdm.tqdm(zip(train_dataloader, ood_dataloader_train)):
             images, labels = images.to(device), labels.to(device).long()
             ood_images = ood_images.to(device)
@@ -263,7 +291,8 @@ def train(**kwargs):
             global_step += 1
         print("Validating...")
         val_loss, val_acc = evaluate(
-            model, val_dataloader, ood_dataloader_val, criterion, device, val_writer)
+            model, val_dataloader, ood_dataloader_val, criterion, device, val_writer,
+            T=args.temperature, eps=args.temperature)
         val_writer.add_scalar("Loss_BCE", val_loss, global_step=global_step)
         val_writer.add_scalar("Accuracy", val_acc, global_step=global_step)
 

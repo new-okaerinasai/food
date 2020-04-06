@@ -8,10 +8,12 @@
     "checkpoints_dir": "./checkpoints",
     "checkpoint_each": 20,
     "keep_logs": false,
-    "resume": "./checkpoints/model_best_cifar10.pth",
+    "resume": "./checkpoints/model_best_cifar100.pth",
     "task": "vanilla",
-    "dataset": "cifar_10",
+    "dataset": "cifar_100",
     "log_each": 20,
     "lambda1": 0.07,
-    "lambda2": 0.05
+    "lambda2": 0.05,
+    "temperature": 1000,
+    "eps": 0.01
 }
