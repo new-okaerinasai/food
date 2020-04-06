@@ -1,17 +1,17 @@
 {
     "data_path": "./data",
-    "batch_size": 8,
+    "batch_size": 16,
     "model": "resnet18",
-    "lr": 1e-3,
-    "epochs": 500,
+    "lr": 0.01,
+    "epochs": 250,
     "logdir": "./logs",
     "checkpoints_dir": "./checkpoints",
     "checkpoint_each": 20,
     "keep_logs": false,
-    "resume": null,
+    "resume": "./checkpoints/mnist_convnet_model_epoch_10.pth",
     "task": "vanilla",
-    "dataset": "cifar_10",
+    "dataset": "mnist",
     "log_each": 20,
-    "temperature": null,
-    "eps": null
+    "lambda1": 0.07,
+    "lambda2": 0.05
 }
